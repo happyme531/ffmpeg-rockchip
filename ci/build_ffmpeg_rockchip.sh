@@ -30,8 +30,49 @@ RGA_BRANCH="jellyfin-rga"
 mkdir -p "${SRC_DIR}" "${BUILD_DIR}" "${PREFIX_DIR}" "${DIST_DIR}"
 
 export PATH="$HOME/.local/bin:$PATH"
-export PKG_CONFIG_PATH="${PREFIX_DIR}/lib/pkgconfig"
 export LD_LIBRARY_PATH="${PREFIX_DIR}/lib:${LD_LIBRARY_PATH:-}"
+
+setup_pkg_config_path() {
+  local paths=()
+  local d
+  for d in "${PREFIX_DIR}/lib/pkgconfig" "${PREFIX_DIR}/lib64/pkgconfig" "${PREFIX_DIR}/share/pkgconfig"; do
+    if [[ -d "${d}" ]]; then
+      paths+=("${d}")
+    fi
+  done
+  if [[ ${#paths[@]} -gt 0 ]]; then
+    local joined
+    joined="$(IFS=:; echo "${paths[*]}")"
+    export PKG_CONFIG_PATH="${joined}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+  fi
+}
+
+setup_pkg_config_path
+
+git_clone_retry() {
+  local repo_url="$1"
+  local branch="$2"
+  local dst_dir="$3"
+  local max_retries="${4:-5}"
+  local retry_delay_s="${5:-3}"
+  local attempt=1
+
+  while (( attempt <= max_retries )); do
+    if git clone --depth=1 --branch "${branch}" "${repo_url}" "${dst_dir}"; then
+      return 0
+    fi
+
+    if (( attempt == max_retries )); then
+      echo "ERROR: failed to clone ${repo_url} (branch: ${branch}) after ${max_retries} attempts"
+      return 1
+    fi
+
+    echo "WARN: clone failed for ${repo_url} (attempt ${attempt}/${max_retries}), retrying in ${retry_delay_s}s..."
+    rm -rf "${dst_dir}"
+    sleep "${retry_delay_s}"
+    attempt=$((attempt + 1))
+  done
+}
 
 fetch_sources() {
   if [[ ! -d "${SRC_DIR}/libdrm/.git" ]]; then
@@ -43,10 +84,10 @@ fetch_sources() {
     mv "${SRC_DIR}/mbedtls-${MBEDTLS_TAG#v}" "${SRC_DIR}/mbedtls"
   fi
   if [[ ! -d "${SRC_DIR}/rkmpp/.git" ]]; then
-    git clone --depth=1 --branch "${MPP_BRANCH}" https://gitee.com/nyanmisaka/mpp.git "${SRC_DIR}/rkmpp"
+    git_clone_retry "https://gitee.com/nyanmisaka/mpp.git" "${MPP_BRANCH}" "${SRC_DIR}/rkmpp" 5 4
   fi
   if [[ ! -d "${SRC_DIR}/rkrga/.git" ]]; then
-    git clone --depth=1 --branch "${RGA_BRANCH}" https://gitee.com/nyanmisaka/rga.git "${SRC_DIR}/rkrga"
+    git_clone_retry "https://gitee.com/nyanmisaka/rga.git" "${RGA_BRANCH}" "${SRC_DIR}/rkrga" 5 4
   fi
 }
 
@@ -100,6 +141,21 @@ build_mpp() {
     -DBUILD_TEST=OFF
   cmake --build "${BUILD_DIR}/rkmpp" -j"${JOBS}"
   cmake --install "${BUILD_DIR}/rkmpp"
+  setup_pkg_config_path
+
+  if [[ "${shared_libs}" == "OFF" ]]; then
+    local pc=""
+    if [[ -f "${PREFIX_DIR}/lib/pkgconfig/rockchip_mpp.pc" ]]; then
+      pc="${PREFIX_DIR}/lib/pkgconfig/rockchip_mpp.pc"
+    elif [[ -f "${PREFIX_DIR}/lib64/pkgconfig/rockchip_mpp.pc" ]]; then
+      pc="${PREFIX_DIR}/lib64/pkgconfig/rockchip_mpp.pc"
+    fi
+
+    if [[ -n "${pc}" ]]; then
+      # Static mpp needs extra system libs; upstream .pc leaves Libs.private empty.
+      sed -i 's|^Libs\.private:.*|Libs.private: -pthread -lrt -ldl|' "${pc}"
+    fi
+  fi
 }
 
 build_rga() {
@@ -125,6 +181,20 @@ build_rga() {
     -Dlibrga_demo=false
   ninja -C "${BUILD_DIR}/rkrga" -j"${JOBS}"
   ninja -C "${BUILD_DIR}/rkrga" install
+  setup_pkg_config_path
+
+  if [[ "${default_library}" == "static" ]]; then
+    local pc=""
+    if [[ -f "${PREFIX_DIR}/lib/pkgconfig/librga.pc" ]]; then
+      pc="${PREFIX_DIR}/lib/pkgconfig/librga.pc"
+    elif [[ -f "${PREFIX_DIR}/lib64/pkgconfig/librga.pc" ]]; then
+      pc="${PREFIX_DIR}/lib64/pkgconfig/librga.pc"
+    fi
+    if [[ -n "${pc}" ]]; then
+      # Static librga is C++; declare runtime libs for static link checks.
+      sed -i 's|^Libs\.private:.*|Libs.private: -lstdc++ -pthread -ldl|' "${pc}"
+    fi
+  fi
 }
 
 build_ffmpeg() {
@@ -133,6 +203,20 @@ build_ffmpeg() {
   local pkg_config_flags="$3"
   local extra_ldflags
   extra_ldflags="-L${PREFIX_DIR}/lib -Wl,-rpath,\$ORIGIN/../lib -Wl,-rpath,\$ORIGIN -Wl,--enable-new-dtags"
+
+  setup_pkg_config_path
+  if ! pkg-config ${pkg_config_flags} --exists rockchip_mpp; then
+    echo "ERROR: rockchip_mpp not found by pkg-config"
+    echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:-}"
+    find "${PREFIX_DIR}" -maxdepth 4 -name 'rockchip_mpp.pc' -o -name 'rockchip_vpu.pc' || true
+    exit 1
+  fi
+  if ! pkg-config ${pkg_config_flags} --exists librga; then
+    echo "ERROR: librga not found by pkg-config"
+    echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:-}"
+    find "${PREFIX_DIR}" -maxdepth 4 -name 'librga.pc' || true
+    exit 1
+  fi
 
   cd "${FFMPEG_SRC}"
   make distclean >/dev/null 2>&1 || true
