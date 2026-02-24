@@ -1,0 +1,77 @@
+name: Build FFmpeg Rockchip
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "master", "8.0"]
+    paths:
+      - ".github/workflows/build-ffmpeg-rockchip.yml"
+      - "ci/build_ffmpeg_rockchip.sh"
+      - "configure"
+      - "Makefile"
+      - "compat/**"
+      - "ffbuild/**"
+      - "fftools/**"
+      - "libavcodec/**"
+      - "libavdevice/**"
+      - "libavfilter/**"
+      - "libavformat/**"
+      - "libavutil/**"
+      - "libswresample/**"
+      - "libswscale/**"
+  pull_request:
+    paths:
+      - ".github/workflows/build-ffmpeg-rockchip.yml"
+      - "ci/build_ffmpeg_rockchip.sh"
+      - "configure"
+      - "Makefile"
+      - "compat/**"
+      - "ffbuild/**"
+      - "fftools/**"
+      - "libavcodec/**"
+      - "libavdevice/**"
+      - "libavfilter/**"
+      - "libavformat/**"
+      - "libavutil/**"
+      - "libswresample/**"
+      - "libswscale/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [shared, static]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            git \
+            cmake \
+            ninja-build \
+            pkg-config \
+            python3 \
+            python3-pip \
+            yasm \
+            nasm \
+            curl \
+            tar \
+            meson
+
+      - name: Build ${{ matrix.variant }} package
+        run: |
+          ./ci/build_ffmpeg_rockchip.sh "${{ matrix.variant }}" 4
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-rockchip-${{ matrix.variant }}-${{ runner.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
