@@ -41,6 +41,9 @@ jobs:
     runs-on: ubuntu-22.04-arm
     container:
       image: debian:bullseye
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
