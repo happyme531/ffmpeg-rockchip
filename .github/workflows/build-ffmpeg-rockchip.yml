@@ -66,9 +66,11 @@ jobs:
             nasm \
             curl \
             tar \
-            meson \
             patchelf \
             file
+          python3 -m pip install --no-cache-dir --upgrade pip
+          python3 -m pip install --no-cache-dir "meson==0.63.3"
+          meson --version
 
       - name: Build ${{ matrix.variant }} package
         run: |
