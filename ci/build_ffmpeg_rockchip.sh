@@ -131,6 +131,7 @@ build_mbedtls() {
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="${PREFIX_DIR}" \
     -DCMAKE_INSTALL_LIBDIR=lib \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DUSE_STATIC_MBEDTLS_LIBRARY="${static_on}" \
     -DUSE_SHARED_MBEDTLS_LIBRARY="${shared_on}" \
     -DENABLE_TESTING=OFF \
@@ -302,7 +303,7 @@ fetch_sources
 
 if [[ "$VARIANT" == "shared" ]]; then
   build_libdrm shared
-  build_mbedtls OFF ON
+  build_mbedtls ON OFF
   build_mpp ON
   build_rga shared
   build_ffmpeg --enable-shared --disable-static ""
