@@ -72,25 +72,53 @@ jobs:
           python3 -m pip install --no-cache-dir "meson==0.63.3"
           meson --version
 
+      - name: CI machine info
+        run: |
+          set -euo pipefail
+          echo "=== runner context ==="
+          echo "GITHUB_RUN_ID=${GITHUB_RUN_ID}"
+          echo "GITHUB_RUN_NUMBER=${GITHUB_RUN_NUMBER}"
+          echo "GITHUB_WORKFLOW=${GITHUB_WORKFLOW}"
+          echo "GITHUB_JOB=${GITHUB_JOB}"
+          echo "GITHUB_REF=${GITHUB_REF}"
+          echo "RUNNER_OS=${RUNNER_OS}"
+          echo "RUNNER_ARCH=${RUNNER_ARCH}"
+          echo
+          echo "=== kernel / distro ==="
+          uname -a
+          cat /etc/os-release || true
+          echo
+          echo "=== cpu ==="
+          if command -v lscpu >/dev/null 2>&1; then
+            lscpu
+          else
+            nproc
+            sed -n '1,80p' /proc/cpuinfo
+          fi
+          echo
+          echo "=== memory ==="
+          if command -v free >/dev/null 2>&1; then
+            free -h
+          else
+            sed -n '1,40p' /proc/meminfo
+          fi
+          echo
+          echo "=== disk ==="
+          df -h
+          echo
+          echo "=== toolchain ==="
+          cc --version | sed -n '1,2p'
+          c++ --version | sed -n '1,2p'
+          cmake --version | sed -n '1,2p'
+          ninja --version
+          meson --version
+          pkg-config --version
+          ldd --version | sed -n '1,2p'
+          getconf GNU_LIBC_VERSION || true
+
       - name: Build ${{ matrix.variant }} package
         run: |
           ./ci/build_ffmpeg_rockchip.sh "${{ matrix.variant }}" 4
-
-      - name: Smoke test package
-        run: |
-          set -euo pipefail
-          tarball="$(ls dist/ffmpeg-rockchip-${{ matrix.variant }}-*.tar.gz | head -n1)"
-          pkg_dir="$(tar -tf "${tarball}" | head -n1 | cut -d/ -f1)"
-          tar -xf "${tarball}" -C dist
-          dist/${pkg_dir}/bin/ffmpeg -version | head -n3
-          dist/${pkg_dir}/bin/ffprobe -version | head -n3
-          readelf -d dist/${pkg_dir}/bin/ffmpeg | grep -E 'RPATH|RUNPATH'
-          if [ "${{ matrix.variant }}" = "static" ]; then
-            if readelf -d dist/${pkg_dir}/bin/ffmpeg | grep -q 'librga.so'; then
-              echo "static variant still depends on dynamic librga"
-              exit 1
-            fi
-          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

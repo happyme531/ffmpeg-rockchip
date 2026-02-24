@@ -74,6 +74,17 @@ git_clone_retry() {
   done
 }
 
+pc_set_or_append_field() {
+  local pc_file="$1"
+  local key="$2"
+  local value="$3"
+  if grep -q "^${key}:" "${pc_file}"; then
+    sed -i "s|^${key}:.*|${key}: ${value}|" "${pc_file}"
+  else
+    printf '%s: %s\n' "${key}" "${value}" >> "${pc_file}"
+  fi
+}
+
 fetch_sources() {
   if [[ ! -d "${SRC_DIR}/libdrm/.git" ]]; then
     git clone --depth=1 --branch "${LIBDRM_TAG}" https://gitlab.freedesktop.org/mesa/drm.git "${SRC_DIR}/libdrm"
@@ -153,7 +164,7 @@ build_mpp() {
 
     if [[ -n "${pc}" ]]; then
       # Static mpp needs extra system libs; upstream .pc leaves Libs.private empty.
-      sed -i 's|^Libs\.private:.*|Libs.private: -pthread -lrt -ldl|' "${pc}"
+      pc_set_or_append_field "${pc}" "Libs.private" "-pthread -lrt -ldl"
     fi
   fi
 }
@@ -192,7 +203,9 @@ build_rga() {
     fi
     if [[ -n "${pc}" ]]; then
       # Static librga is C++; declare runtime libs for static link checks.
-      sed -i 's|^Libs\.private:.*|Libs.private: -lstdc++ -pthread -ldl|' "${pc}"
+      pc_set_or_append_field "${pc}" "Libs.private" "-lstdc++ -pthread -ldl -lrt -lm"
+      # Keep include semantics robust for headers like <rga/RgaApi.h>.
+      pc_set_or_append_field "${pc}" "Cflags" "-I\${includedir} -I\${includedir}/rga"
     fi
   fi
 }
@@ -202,7 +215,14 @@ build_ffmpeg() {
   local ffmpeg_static_flag="$2"
   local pkg_config_flags="$3"
   local extra_ldflags
+  local extra_libs
+  local extra_libs_flag=()
   extra_ldflags="-L${PREFIX_DIR}/lib -Wl,-rpath,\$ORIGIN/../lib -Wl,-rpath,\$ORIGIN -Wl,--enable-new-dtags"
+  extra_libs=""
+  if [[ "${pkg_config_flags}" == *"--static"* ]]; then
+    extra_libs="-lstdc++ -pthread -ldl -lrt -lm"
+    extra_libs_flag=(--extra-libs="${extra_libs}")
+  fi
 
   setup_pkg_config_path
   if ! pkg-config ${pkg_config_flags} --exists rockchip_mpp; then
@@ -240,6 +260,7 @@ build_ffmpeg() {
     --enable-pic \
     --extra-cflags="-fPIC -g1 -I${PREFIX_DIR}/include" \
     --extra-ldflags="${extra_ldflags}" \
+    "${extra_libs_flag[@]}" \
     --pkg-config-flags="${pkg_config_flags}" \
     "${ffmpeg_shared_flag}" \
     "${ffmpeg_static_flag}"
