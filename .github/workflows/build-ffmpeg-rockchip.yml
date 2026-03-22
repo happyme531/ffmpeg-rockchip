@@ -120,6 +120,9 @@ jobs:
           getconf GNU_LIBC_VERSION || true
 
       - name: Build ${{ matrix.variant }} package
+        env:
+          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+          GITEE_PASSWORD: ${{ secrets.GITEE_PASSWORD }}
         run: |
           ./ci/build_ffmpeg_rockchip.sh "${{ matrix.variant }}" 4
 

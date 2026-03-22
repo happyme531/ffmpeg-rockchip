@@ -49,6 +49,48 @@ setup_pkg_config_path() {
 
 setup_pkg_config_path
 
+run_git_clone() {
+  local repo_url="$1"
+  local branch="$2"
+  local dst_dir="$3"
+
+  if [[ "${repo_url}" == https://gitee.com/* ]]; then
+    local has_user="${GITEE_USERNAME:+yes}"
+    local has_pass="${GITEE_PASSWORD:+yes}"
+
+    if [[ -n "${has_user}" && -n "${has_pass}" ]]; then
+      local askpass
+      askpass="$(mktemp)"
+      cat > "${askpass}" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  *Username* )
+    printf '%s\n' "${GITEE_USERNAME}"
+    ;;
+  *Password* )
+    printf '%s\n' "${GITEE_PASSWORD}"
+    ;;
+  * )
+    printf '\n'
+    ;;
+esac
+EOF
+      chmod 700 "${askpass}"
+      GIT_TERMINAL_PROMPT=0 GIT_ASKPASS="${askpass}" \
+        git clone --depth=1 --branch "${branch}" "${repo_url}" "${dst_dir}"
+      local clone_status=$?
+      rm -f "${askpass}"
+      return "${clone_status}"
+    fi
+
+    if [[ -n "${has_user}" || -n "${has_pass}" ]]; then
+      echo "WARN: GITEE_USERNAME/GITEE_PASSWORD must both be set; falling back to anonymous clone for ${repo_url}"
+    fi
+  fi
+
+  git clone --depth=1 --branch "${branch}" "${repo_url}" "${dst_dir}"
+}
+
 git_clone_retry() {
   local repo_url="$1"
   local branch="$2"
@@ -58,7 +100,7 @@ git_clone_retry() {
   local attempt=1
 
   while (( attempt <= max_retries )); do
-    if git clone --depth=1 --branch "${branch}" "${repo_url}" "${dst_dir}"; then
+    if run_git_clone "${repo_url}" "${branch}" "${dst_dir}"; then
       return 0
     fi
 
