@@ -14,7 +14,7 @@ if [[ "$VARIANT" != "shared" && "$VARIANT" != "static" ]]; then
   exit 1
 fi
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK_DIR="${ROOT_DIR}/.ci-build/${VARIANT}"
 SRC_DIR="${WORK_DIR}/src"
 BUILD_DIR="${WORK_DIR}/build"
@@ -116,6 +116,32 @@ git_clone_retry() {
   done
 }
 
+git_clone_with_submodules_retry() {
+  local repo_url="$1"
+  local branch="$2"
+  local dst_dir="$3"
+  local max_retries="${4:-5}"
+  local retry_delay_s="${5:-3}"
+  local attempt=1
+
+  while (( attempt <= max_retries )); do
+    if run_git_clone "${repo_url}" "${branch}" "${dst_dir}" &&
+       git -C "${dst_dir}" submodule update --init --recursive --depth 1; then
+      return 0
+    fi
+
+    if (( attempt == max_retries )); then
+      echo "ERROR: failed to clone ${repo_url} with submodules (branch: ${branch}) after ${max_retries} attempts"
+      return 1
+    fi
+
+    echo "WARN: clone with submodules failed for ${repo_url} (attempt ${attempt}/${max_retries}), retrying in ${retry_delay_s}s..."
+    rm -rf "${dst_dir}"
+    sleep "${retry_delay_s}"
+    attempt=$((attempt + 1))
+  done
+}
+
 pc_set_or_append_field() {
   local pc_file="$1"
   local key="$2"
@@ -131,10 +157,8 @@ fetch_sources() {
   if [[ ! -d "${SRC_DIR}/libdrm/.git" ]]; then
     git clone --depth=1 --branch "${LIBDRM_TAG}" https://gitlab.freedesktop.org/mesa/drm.git "${SRC_DIR}/libdrm"
   fi
-  if [[ ! -d "${SRC_DIR}/mbedtls" ]]; then
-    curl -L --fail "https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/${MBEDTLS_TAG}.tar.gz" -o "${SRC_DIR}/mbedtls.tar.gz"
-    tar -xf "${SRC_DIR}/mbedtls.tar.gz" -C "${SRC_DIR}"
-    mv "${SRC_DIR}/mbedtls-${MBEDTLS_TAG#v}" "${SRC_DIR}/mbedtls"
+  if [[ ! -d "${SRC_DIR}/mbedtls/.git" ]]; then
+    git_clone_with_submodules_retry "https://github.com/Mbed-TLS/mbedtls.git" "${MBEDTLS_TAG}" "${SRC_DIR}/mbedtls" 5 4
   fi
   if [[ ! -d "${SRC_DIR}/rkmpp/.git" ]]; then
     git_clone_retry "https://gitee.com/nyanmisaka/mpp.git" "${MPP_BRANCH}" "${SRC_DIR}/rkmpp" 5 4
