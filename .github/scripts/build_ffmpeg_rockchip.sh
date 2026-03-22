@@ -22,8 +22,8 @@ PREFIX_DIR="${WORK_DIR}/prefix"
 DIST_DIR="${ROOT_DIR}/dist"
 FFMPEG_SRC="${ROOT_DIR}"
 
-LIBDRM_TAG="libdrm-2.4.123"
-MBEDTLS_TAG="v2.28.9"
+LIBDRM_TAG="libdrm-2.4.131"
+MBEDTLS_TAG="v3.6.5"
 MPP_BRANCH="jellyfin-mpp"
 RGA_BRANCH="jellyfin-rga"
 
