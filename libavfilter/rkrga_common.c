@@ -582,11 +582,6 @@ static RGAFrame *query_frame(RKRGAContext *r, AVFilterLink *outlink,
         goto fail;
     }
     out_frame->frame->crop_top = 0;
-    if (out_frame->frame->width != in->width || out_frame->frame->height != in->height) {
-        av_frame_side_data_remove_by_props(&out_frame->frame->side_data,
-                                           &out_frame->frame->nb_side_data,
-                                           AV_SIDE_DATA_PROP_SIZE_DEPENDENT);
-    }
     if (r->out_reset_sar) {
         out_frame->frame->sample_aspect_ratio = (AVRational){1, 1};
     } else if ((in0_info->rotate_mode & 0x04) == 0x04 /* HAL_TRANSFORM_ROT_90 */ ||
@@ -607,6 +602,11 @@ static RGAFrame *query_frame(RKRGAContext *r, AVFilterLink *outlink,
     if ((ret = av_hwframe_get_buffer(hw_frame_ctx, out_frame->frame, 0)) < 0) {
         av_log(ctx, AV_LOG_ERROR, "Cannot allocate an internal frame: %d\n", ret);
         goto fail;
+    }
+    if (out_frame->frame->width != in->width || out_frame->frame->height != in->height) {
+        av_frame_side_data_remove_by_props(&out_frame->frame->side_data,
+                                           &out_frame->frame->nb_side_data,
+                                           AV_SIDE_DATA_PROP_SIZE_DEPENDENT);
     }
 
     desc = (AVDRMFrameDescriptor *)out_frame->frame->data[0];
